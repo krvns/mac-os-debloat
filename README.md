@@ -1,5 +1,34 @@
 # mac-os-debloat
 
+## Running from source
+
+```bash
+./debloat
+# or: python3 debloat
+```
+
+## Commands
+
+Runs the interactive TUI by default. Non-interactive flags for scripting and quick recovery:
+
+```bash
+debloat                    # interactive TUI (default)
+debloat --preset telemetry # disable analytics, crash reports, ads, beta enrollment (47)
+debloat --preset balanced  # telemetry + Siri, Apple Intelligence, iMessage, Family (184)
+debloat --list             # print every label, in preset file format
+debloat --status           # per-domain disabled/enabled, how many run, how many ignore the override, free RAM
+debloat --audit            # list any embedded labels not present on your macOS build
+debloat --disable-all      # disable every label, no exceptions (prompts sudo)
+debloat --enable-all       # re-enable everything — the panic button
+debloat --restore          # revert to the state before your last apply
+debloat --dry-run          # with --preset/--disable-all/--enable-all: preview only
+debloat --status --json    # machine-readable status
+```
+
+An apply is two `sudo launchctl` calls per label per domain, so `--disable-all` runs several hundred of them; it prints a `disabling 137/296 com.apple.…` line in place while it works, on the command line and in the TUI alike. Piped output gets none of that.
+
+An apply prompts for your sudo password on the TUI's own bottom line — the TUI never drops back to your shell, and the progress line and the result land in the same place. `--status`, `--audit`, `--list`, and `--dry-run` need no sudo — reading launchd state is unprivileged. Every apply first snapshots your current state to `~/.mac-os-debloat/latest.json`, so `--restore` always brings you back. If anything feels off, `debloat --enable-all` turns it all back on.
+
 **Debloat your Mac from the terminal. Zero dependencies. Zero install.**
 
 Interactive console util to disable 296 non-essential macOS launchd services — Siri, Apple Intelligence, telemetry, ads, and the Apple apps you don't use — plus the Spotlight file index. Frees ~1.5-2 GB of RAM on a 16 GB M4 ([how that was measured](#why)). Fully reversible. Built for macOS Tahoe 26.x and Golden Gate 27 on Apple Silicon (**tested on 27**, [#15](https://github.com/OleksandrKrupko/mac-os-debloat/issues/15)); Tahoe still supports four Intel models, which are untested. Verify with `debloat --status`, which reports what is actually in effect and how many of the services are running right now — including after a reboot ([see below](#persistence)). Counts in this README are filled by [`extras/sync-readme.py`](extras/sync-readme.py) from the catalog — do not edit the numbers by hand.
@@ -30,28 +59,6 @@ All three methods need `python3` — preinstalled with the Xcode Command Line To
 The top block is a menu: arrow onto `telemetry`, `balanced`, `disable all` or `enable all` and press `enter` to apply it right away. `disable all` disappears once everything is off, `enable all` once everything is on, so every row on offer does something.
 
 Everything below the menu is a checkbox: `[✓]` on, `[ ]` off, `[▘]` spinning while the system is still settling into the state you asked for. `space` flips the row under the cursor, `enter` applies whatever is ticked. The bottom line always explains the row under the cursor — what the service does and what you lose with it off. The first checkbox is Spotlight ([below](#spotlight)); everything after it is a launchd service.
-
-## Commands
-
-Runs the interactive TUI by default. Non-interactive flags for scripting and quick recovery:
-
-```bash
-debloat                    # interactive TUI (default)
-debloat --preset telemetry # disable analytics, crash reports, ads, beta enrollment (47)
-debloat --preset balanced  # telemetry + Siri, Apple Intelligence, iMessage, Family (184)
-debloat --list             # print every label, in preset file format
-debloat --status           # per-domain disabled/enabled, how many run, how many ignore the override, free RAM
-debloat --audit            # list any embedded labels not present on your macOS build
-debloat --disable-all      # disable every label, no exceptions (prompts sudo)
-debloat --enable-all       # re-enable everything — the panic button
-debloat --restore          # revert to the state before your last apply
-debloat --dry-run          # with --preset/--disable-all/--enable-all: preview only
-debloat --status --json    # machine-readable status
-```
-
-An apply is two `sudo launchctl` calls per label per domain, so `--disable-all` runs several hundred of them; it prints a `disabling 137/296 com.apple.…` line in place while it works, on the command line and in the TUI alike. Piped output gets none of that.
-
-An apply prompts for your sudo password on the TUI's own bottom line — the TUI never drops back to your shell, and the progress line and the result land in the same place. `--status`, `--audit`, `--list`, and `--dry-run` need no sudo — reading launchd state is unprivileged. Every apply first snapshots your current state to `~/.mac-os-debloat/latest.json`, so `--restore` always brings you back. If anything feels off, `debloat --enable-all` turns it all back on.
 
 ## Spotlight
 
