@@ -1733,9 +1733,8 @@ def main() -> int:
               f"(see `debloat --audit`)")
     if not reopen_tty_stdin():
         print("the interactive TUI needs a terminal on stdin, but none is "
-              "attached.\nUse the npx launcher, or download then run:\n"
-              "  curl -fsSL https://raw.githubusercontent.com/OleksandrKrupko/"
-              "mac-os-debloat/main/debloat -o /tmp/debloat && python3 /tmp/debloat\n"
+              "attached.\nRun directly in a terminal:\n"
+              "  ./debloat  # or: python3 debloat\n"
               "Non-interactive flags (--status, --disable-all, ...) work over a "
               "pipe.", file=sys.stderr)
         return 1
