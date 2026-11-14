@@ -28,11 +28,8 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import textwrap
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,11 +40,9 @@ PERSIST_LABEL = "io.github.techiknow.debloat"
 PERSIST_PLIST = Path(f"/Library/LaunchDaemons/{PERSIST_LABEL}.plist")
 PERSIST_DIR = Path("/Library/Application Support/mac-os-debloat")
 PERSIST_STATE = PERSIST_DIR / "persist.json"
-PERSIST_REPORT = PERSIST_DIR / "last-run.json"
 PERSIST_PASSES = 5
 PERSIST_PASS_S = 60
 PERSIST_WATCH_S = 300
-PERSIST_REPORT_PASSES = 20
 
 LAUNCHD_DIRS = (
     "/System/Library/LaunchDaemons",
@@ -1693,9 +1688,7 @@ def persist_status() -> dict:
     if not PERSIST_PLIST.exists():
         return {"installed": False}
     state = json.loads(PERSIST_STATE.read_text())
-    last = json.loads(PERSIST_REPORT.read_text()) if PERSIST_REPORT.exists() else {}
-    return {"installed": True, "labels": len(state["labels"]),
-            "last_boot": last.get("boot"), "respawners": last.get("respawners")}
+    return {"installed": True, "labels": len(state["labels"])}
 
 
 def sudo_write(path: Path, text: str) -> None:
@@ -1704,23 +1697,11 @@ def sudo_write(path: Path, text: str) -> None:
 
 
 def script_for_daemon() -> tuple[Path | None, str]:
-    """This script's code as a file, for the daemon to run. `curl ... | python3`
-    leaves no file on disk, so fetch this same release instead. Returns
-    (path, "") or (None, why not)."""
+    """This script's code as a file, for the daemon to run."""
     here = Path(__file__)
     if here.is_file():
         return here, ""
-    url = f"https://raw.githubusercontent.com/techiknow/mac-os-debloat/v{VERSION}/debloat"
-    try:
-        text = urllib.request.urlopen(url, timeout=20).read().decode()
-    except (urllib.error.URLError, OSError) as e:
-        return None, f"could not download {url} ({e})"
-    if f'VERSION = "{VERSION}"' not in text:
-        return None, f"{url} is not version {VERSION}"
-    fd, name = tempfile.mkstemp(suffix="-debloat")
-    with os.fdopen(fd, "w") as f:
-        f.write(text)
-    return Path(name), ""
+    return None, "boot daemon installation requires running from a local file; download script first"
 
 
 def sync_boot_daemon(sections: list[Section]) -> str:
@@ -1743,8 +1724,8 @@ def sync_boot_daemon(sections: list[Section]) -> str:
     <string>{PERSIST_DIR}/debloat</string>
   </array>
   <key>RunAtLoad</key><true/>
-  <key>StandardOutPath</key><string>{PERSIST_DIR}/daemon.log</string>
-  <key>StandardErrorPath</key><string>{PERSIST_DIR}/daemon.log</string>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>/dev/null</string>
 </dict>
 </plist>
 """
@@ -1795,23 +1776,19 @@ def cmd_persist_run() -> int:
     UID = state["uid"]
     DOMAINS = ("system", f"gui/{UID}")
     wanted = set(state["labels"])
-    run: dict = {"boot": time.strftime("%Y-%m-%dT%H:%M:%S"), "wanted": len(wanted), "passes": []}
 
-    def reapply(step: str) -> None:
+    def reapply() -> None:
         sections = load_sections()[0]
         refresh_state(sections)
         for sec in sections:
             for it in sec.items:
                 it.selected = it.label not in wanted
-        result = apply_changes(sections, report=lambda _text: None)
-        run[step] = {"disabled": result["disabled"], "killed": result["killed"],
-                     "not_disabled": result["not_disabled"]}
+        apply_changes(sections, report=lambda _text: None)
 
-    reapply("at_boot")
+    reapply()
     while os.stat("/dev/console").st_uid != UID:
         time.sleep(2)
-    run["login"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-    reapply("at_login")
+    reapply()
 
     killed: set[str] = set()
     respawners: set[str] = set()
@@ -1819,18 +1796,13 @@ def cmd_persist_run() -> int:
     while True:
         n += 1
         time.sleep(PERSIST_PASS_S if n <= PERSIST_PASSES else PERSIST_WATCH_S)
-        reapply("last_pass_overrides")
+        reapply()
         running = running_pids(sorted(wanted))
         fresh = {label: pids for label, pids in running.items() if label not in killed}
         respawners |= set(running) - set(fresh)
         for label, pids in fresh.items():
             kill_label(label, pids)
         killed |= set(fresh)
-        entry = {"pass": n, "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "killed": sorted(fresh)}
-        run["passes"] = (run["passes"] + [entry])[-PERSIST_REPORT_PASSES:]
-        run["killed_total"] = len(killed)
-        run["respawners"] = sorted(respawners)
-        PERSIST_REPORT.write_text(json.dumps(run, indent=2))
 
 
 def cmd_restore(sections: list[Section]) -> int:
